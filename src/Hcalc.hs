@@ -126,11 +126,37 @@ parseApp ts = (Nothing, ts)
 parse :: [Token] -> AST
 parse = fst . parseAST
 
+--------------------------------------
+-- AST -> Evaluation Tree Transform --
+--------------------------------------
+
+data EvalTree = Operation EvalTree Op EvalTree
+              | Number Double
+              deriving(Show)
+
+fromAST :: AST -> Maybe EvalTree
+fromAST = fromLineNode
+
+fromLineNode :: LineNode -> Maybe EvalTree
+fromLineNode = fmap fromExpNode
+
+fromExpNode :: ExpNode -> EvalTree
+fromExpNode (Exp term Nothing) = (fromTermNode term)
+fromExpNode (Exp term (Just app@(App op _ _))) = Operation (fromTermNode term) op (fromAppNode app)
+
+fromTermNode :: TermNode -> EvalTree
+fromTermNode (NumTerm x) = Number x
+fromTermNode (ParTerm exp) = fromExpNode exp
+
+fromAppNode :: AppNodeDef -> EvalTree
+fromAppNode (App _ term Nothing) = fromTermNode term
+fromAppNode (App _ term (Just app@(App op _ _))) = Operation (fromTermNode term) op (fromAppNode app)
+
 interpret :: String -> String
 interpret = unlines . map interpretLine . lines
 
 interpretLine :: String -> String
-interpretLine = show .{-print . eval .-} parse . scan
+interpretLine = show .{-print . eval .-} fromAST . parse . scan
 
 --print :: Val -> String
 
