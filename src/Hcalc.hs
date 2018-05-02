@@ -141,16 +141,15 @@ fromLineNode :: LineNode -> Maybe EvalTree
 fromLineNode = fmap fromExpNode
 
 fromExpNode :: ExpNode -> EvalTree
-fromExpNode (Exp term Nothing) = (fromTermNode term)
-fromExpNode (Exp term (Just app@(App op _ _))) = Operation (fromTermNode term) op (fromAppNode app)
+fromExpNode (Exp term app) = fromAppNode (fromTermNode term) app
 
 fromTermNode :: TermNode -> EvalTree
 fromTermNode (NumTerm x) = Number x
 fromTermNode (ParTerm exp) = fromExpNode exp
 
-fromAppNode :: AppNodeDef -> EvalTree
-fromAppNode (App _ term Nothing) = fromTermNode term
-fromAppNode (App _ term (Just app@(App op _ _))) = Operation (fromTermNode term) op (fromAppNode app)
+fromAppNode :: EvalTree -> AppNode -> EvalTree
+fromAppNode x Nothing = x
+fromAppNode x (Just (App op term app)) = fromAppNode (Operation x op (fromTermNode term)) app
 
 interpret :: String -> String
 interpret = unlines . map interpretLine . lines
@@ -159,6 +158,3 @@ interpretLine :: String -> String
 interpretLine = show .{-print . eval .-} fromAST . parse . scan
 
 --print :: Val -> String
-
---eval :: AST -> Val
-
