@@ -63,15 +63,13 @@ readParens s = let stripped = dropWhile isSpace s
                    Just ']' -> [(RParen, remaining)]
                    _        -> []
 
-
-
 instance Read Token where
   readsPrec _ s = let toNum = (\(v, s) -> (Number v, s))
                       toOp = (\(v, s) -> (Operation v, s))
                       nums = map toNum $ (readsPrec 0 :: ReadS Double) s
                       ops = map toOp $ (readsPrec 0 :: ReadS Op) s
                       parens = readParens s
-                  in nums ++ ops ++ parens
+                  in ops ++ nums ++ parens
 
 scan :: String -> [Token]
 scan "" = []
@@ -83,14 +81,46 @@ scan s = let rs = (readsPrec 0 :: ReadS Token) s
 -- Parser --
 ------------
 
--- parser uses a top down approach
---parse :: [Token] -> AST
+-- Laguage Grammar --
+--
+-- Expression -> Term Application
+-- Term -> Number | LParen Expression RParen
+-- Application -> Op Term Application | {}
+
+data ExpNode = Exp TermNode AppNode deriving(Show)
+
+data TermNode = NumTerm Double
+              | ParTerm ExpNode
+              deriving(Show)
+
+type AppNode = Maybe AppNodeDef
+data AppNodeDef = App Op TermNode AppNode deriving(Show)
+
+-- use a recursive descent parser
+parseExp :: [Token] -> (ExpNode, [Token])
+parseExp ts = let (term, rem) = parseTerm ts
+                  (app, rem') = parseApp rem
+              in (Exp term app, rem')
+
+parseTerm :: [Token] -> (TermNode, [Token])
+parseTerm ((Number x):ts) = (NumTerm x, ts)
+parseTerm ((LParen):ts) = let (exp, (RParen):rem) = parseExp ts in (ParTerm exp, rem)
+
+parseApp :: [Token] -> (AppNode, [Token])
+parseApp ((Operation op):ts) = let (term, rem) = parseTerm ts
+                                   (app, rem') = parseApp rem
+                               in (Just $ App op term app, rem')
+parseApp ts = (Nothing, ts)
+
+
+parse :: [Token] -> ExpNode
+parse = fst . parseExp
 
 interpret :: String -> String
 interpret = unlines . map interpretLine . lines
 
 interpretLine :: String -> String
-interpretLine = show .{-print . eval . parse .-} scan
+interpretLine = show .{-print . eval .-} parse . scan
 
 --print :: Val -> String
 
