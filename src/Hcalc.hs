@@ -46,8 +46,8 @@ instance Read Op where
 instance Show Op where
   showsPrec _ op = fromJust . fmap (++) $ lookup op opStrings
 
-data Token = Number Double
-           | Operation Op
+data Token = NumToken Double
+           | OpToken Op
            | LParen
            | RParen
            deriving(Show)
@@ -64,8 +64,8 @@ readParens s = let stripped = dropWhile isSpace s
                    _        -> []
 
 instance Read Token where
-  readsPrec _ s = let toNum = (\(v, s) -> (Number v, s))
-                      toOp = (\(v, s) -> (Operation v, s))
+  readsPrec _ s = let toNum = (\(v, s) -> (NumToken v, s))
+                      toOp = (\(v, s) -> (OpToken v, s))
                       nums = map toNum $ (readsPrec 0 :: ReadS Double) s
                       ops = map toOp $ (readsPrec 0 :: ReadS Op) s
                       parens = readParens s
@@ -83,9 +83,13 @@ scan s = let rs = (readsPrec 0 :: ReadS Token) s
 
 -- Laguage Grammar --
 --
+-- Line -> Expression | {}
 -- Expression -> Term Application
--- Term -> Number | LParen Expression RParen
--- Application -> Op Term Application | {}
+-- Term -> NumToken | LParen Expression RParen
+-- Application -> OpToken Term Application | {}
+
+type AST = LineNode
+type LineNode = Maybe ExpNode
 
 data ExpNode = Exp TermNode AppNode deriving(Show)
 
@@ -97,24 +101,30 @@ type AppNode = Maybe AppNodeDef
 data AppNodeDef = App Op TermNode AppNode deriving(Show)
 
 -- use a recursive descent parser
+parseAST = parseLine
+
+parseLine :: [Token] -> (LineNode, [Token])
+parseLine [] = (Nothing, [])
+parseLine ts = (\(v, ts) -> (Just v, ts)) $ parseExp ts
+
 parseExp :: [Token] -> (ExpNode, [Token])
 parseExp ts = let (term, rem) = parseTerm ts
                   (app, rem') = parseApp rem
               in (Exp term app, rem')
 
 parseTerm :: [Token] -> (TermNode, [Token])
-parseTerm ((Number x):ts) = (NumTerm x, ts)
+parseTerm ((NumToken x):ts) = (NumTerm x, ts)
 parseTerm ((LParen):ts) = let (exp, (RParen):rem) = parseExp ts in (ParTerm exp, rem)
 
 parseApp :: [Token] -> (AppNode, [Token])
-parseApp ((Operation op):ts) = let (term, rem) = parseTerm ts
-                                   (app, rem') = parseApp rem
-                               in (Just $ App op term app, rem')
+parseApp ((OpToken op):ts) = let (term, rem) = parseTerm ts
+                                 (app, rem') = parseApp rem
+                             in (Just $ App op term app, rem')
 parseApp ts = (Nothing, ts)
 
 
-parse :: [Token] -> ExpNode
-parse = fst . parseExp
+parse :: [Token] -> AST
+parse = fst . parseAST
 
 interpret :: String -> String
 interpret = unlines . map interpretLine . lines
