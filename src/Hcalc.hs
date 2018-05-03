@@ -151,10 +151,25 @@ fromAppNode :: EvalTree -> AppNode -> EvalTree
 fromAppNode x Nothing = x
 fromAppNode x (Just (App op term app)) = fromAppNode (Operation x op (fromTermNode term)) app
 
+----------------
+-- Evaluation --
+----------------
+
+eval :: Maybe EvalTree -> Maybe Double
+eval = fmap eval' where
+    eval' (Number x) = x
+    eval' (Operation x op y) = let p = eval' x
+                                   q = eval' y
+                               in case op of
+                                   Sum -> p + q
+                                   Difference -> p - q
+                                   Product -> p * q
+                                   Quotient -> p / q
+
 interpret :: String -> String
 interpret = unlines . map interpretLine . lines
 
 interpretLine :: String -> String
-interpretLine = show .{-print . eval .-} fromAST . parse . scan
-
---print :: Val -> String
+interpretLine = maybeShow . eval .fromAST . parse . scan
+    where maybeShow Nothing = ""
+          maybeShow (Just x) = show x
