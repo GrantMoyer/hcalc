@@ -46,13 +46,13 @@ instance Read Op where
 instance Show Op where
   showsPrec _ op = fromJust . fmap (++) $ lookup op opStrings
 
-data Token = NumToken Double
-           | OpToken Op
-           | LParen
-           | RParen
-           deriving(Show)
+data Token a = NumToken a
+             | OpToken Op
+             | LParen
+             | RParen
+             deriving(Show)
 
-readParens :: String -> [(Token, String)]
+readParens :: String -> [((Token a), String)]
 readParens s = let stripped = dropWhile isSpace s
                    firstChar = if null stripped then Nothing else Just . head $ stripped
                    remaining = if isJust firstChar then tail stripped else stripped
@@ -63,17 +63,17 @@ readParens s = let stripped = dropWhile isSpace s
                    Just ']' -> [(RParen, remaining)]
                    _        -> []
 
-instance Read Token where
+instance (Read a) => Read (Token a) where
   readsPrec _ s = let toNum = (\(v, s) -> (NumToken v, s))
                       toOp = (\(v, s) -> (OpToken v, s))
-                      nums = map toNum $ (readsPrec 0 :: ReadS Double) s
-                      ops = map toOp $ (readsPrec 0 :: ReadS Op) s
+                      nums = map toNum $ readsPrec 0 s
+                      ops = map toOp $ readsPrec 0 s
                       parens = readParens s
                   in ops ++ nums ++ parens
 
-scan :: String -> [Token]
+scan :: (Read a) => String -> [Token a]
 scan "" = []
-scan s = let rs = (readsPrec 0 :: ReadS Token) s
+scan s = let rs = readsPrec 0 s
              (t, rem) = head rs
          in t : scan rem
 
@@ -88,66 +88,66 @@ scan s = let rs = (readsPrec 0 :: ReadS Token) s
 -- Term -> NumToken | LParen Expression RParen
 -- Application -> OpToken Term Application | {}
 
-type AST = LineNode
-type LineNode = Maybe ExpNode
+type AST a = LineNode a
+type LineNode a = Maybe (ExpNode a)
 
-data ExpNode = Exp TermNode AppNode deriving(Show)
+data ExpNode a = Exp (TermNode a) (AppNode a) deriving(Show)
 
-data TermNode = NumTerm Double
-              | ParTerm ExpNode
-              deriving(Show)
+data TermNode a = NumTerm a
+                | ParTerm (ExpNode a)
+                deriving(Show)
 
-type AppNode = Maybe AppNodeDef
-data AppNodeDef = App Op TermNode AppNode deriving(Show)
+type AppNode a = Maybe (AppNodeDef a)
+data AppNodeDef a = App Op (TermNode a) (AppNode a) deriving(Show)
 
 -- use a recursive descent parser
 parseAST = parseLine
 
-parseLine :: [Token] -> (LineNode, [Token])
+parseLine :: [Token a] -> ((LineNode a), [Token a])
 parseLine [] = (Nothing, [])
 parseLine ts = (\(v, ts) -> (Just v, ts)) $ parseExp ts
 
-parseExp :: [Token] -> (ExpNode, [Token])
+parseExp :: [Token a] -> ((ExpNode a), [Token a])
 parseExp ts = let (term, rem) = parseTerm ts
                   (app, rem') = parseApp rem
               in (Exp term app, rem')
 
-parseTerm :: [Token] -> (TermNode, [Token])
+parseTerm :: [Token a] -> ((TermNode a), [Token a])
 parseTerm ((NumToken x):ts) = (NumTerm x, ts)
 parseTerm ((LParen):ts) = let (exp, (RParen):rem) = parseExp ts in (ParTerm exp, rem)
 
-parseApp :: [Token] -> (AppNode, [Token])
+parseApp :: [Token a] -> ((AppNode a), [Token a])
 parseApp ((OpToken op):ts) = let (term, rem) = parseTerm ts
                                  (app, rem') = parseApp rem
                              in (Just $ App op term app, rem')
 parseApp ts = (Nothing, ts)
 
 
-parse :: [Token] -> AST
+parse :: [Token a] -> (AST a)
 parse = fst . parseAST
 
 --------------------------------------
 -- AST -> Evaluation Tree Transform --
 --------------------------------------
 
-data EvalTree = Operation EvalTree Op EvalTree
-              | Number Double
-              deriving(Show)
+data EvalTree a = Operation (EvalTree a) Op (EvalTree a)
+                | Number a
+                deriving(Show)
 
-fromAST :: AST -> Maybe EvalTree
+fromAST :: AST a -> Maybe (EvalTree a)
 fromAST = fromLineNode
 
-fromLineNode :: LineNode -> Maybe EvalTree
+fromLineNode :: LineNode a -> Maybe (EvalTree a)
 fromLineNode = fmap fromExpNode
 
-fromExpNode :: ExpNode -> EvalTree
+fromExpNode :: ExpNode a -> EvalTree a
 fromExpNode (Exp term app) = fromAppNode (fromTermNode term) app
 
-fromTermNode :: TermNode -> EvalTree
+fromTermNode :: TermNode a -> EvalTree a
 fromTermNode (NumTerm x) = Number x
 fromTermNode (ParTerm exp) = fromExpNode exp
 
-fromAppNode :: EvalTree -> AppNode -> EvalTree
+fromAppNode :: EvalTree a -> AppNode a -> EvalTree a
 fromAppNode x Nothing = x
 fromAppNode x (Just (App op term app)) = fromAppNode (Operation x op (fromTermNode term)) app
 
@@ -155,7 +155,7 @@ fromAppNode x (Just (App op term app)) = fromAppNode (Operation x op (fromTermNo
 -- Evaluation --
 ----------------
 
-eval :: Maybe EvalTree -> Maybe Double
+eval :: Fractional a => Maybe (EvalTree a) -> Maybe a
 eval = fmap eval' where
     eval' (Number x) = x
     eval' (Operation x op y) = let p = eval' x
